@@ -4,15 +4,21 @@ const { Router } = require("express");
 const router = Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
-// const generateAccessToken =require('../middleware/autheniticateToken');
+
 let refreshTokens = [];
 
 router.post("/token", (req, res) => {
   const refreshToken = req.body.token;
+  console.log(req.body.token);
+  const interestingItems = new Set(refreshTokens)
+const isItemInSet = interestingItems.has(req.body.token)
+console.log(isItemInSet);
+  console.log(refreshTokens.includes(refreshToken));
   if (refreshToken == null) return res.sendStatus(401);
   if (!refreshTokens.includes(refreshToken)) return res.sendStatus(403);
   jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, user) => {
-    if (err) return res.sendStatus(403);
+    console.log(err);
+    if (err) return res.json({error:err}).sendStatus(403);
     const accessToken = generateAccessToken({ name: user.name });
     res.json({ accessToken: accessToken });
   });
@@ -35,30 +41,52 @@ router.post("/login", async (req, res) => {
   const existingUser = await User.findOne({ email: req.body.email });
   if (existingUser) {
     const accessToken = generateAccessToken(existingUser);
-    const refreshToken = jwt.sign(existingUser, process.env.REFRESH_TOKEN_SECRET);
+    const refreshToken = jwt.sign(
+      existingUser.toJSON(),
+      process.env.REFRESH_TOKEN_SECRET
+    );
     refreshTokens.push(refreshToken);
+    console.log(refreshToken);
+    console.log(refreshTokens.length);
     return res.status(200).json({
-      userName: existingUser.username,
+      userName: existingUser.userName,
       email: existingUser.email,
       accessToken: accessToken,
-      refreshToken: refreshToken,
+      refreshToken: existingUser.token,
+      message: "Login success",
     });
   } else {
-    await new User({ ...req.body }).save();
-    const newUser = await User.findOne({ email: req.body.email });
-    return res
-      .status(201)
-      .json({
-        userName: newUser.username,
-        email: newUser.email,
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        message: "Account created sucessfully",
-      });
+    const newUser = User({
+      userName: req.body.userName,
+      email: req.body.email,
+    });
+    const refreshToken = jwt.sign(
+      newUser.toJSON(),
+      process.env.REFRESH_TOKEN_SECRET
+    );
+    await User({
+      userName: req.body.userName,
+      email: req.body.email,
+      token: refreshToken,
+    }).save();
+   
+    const existingUser = await User.findOne({ email: req.body.email });
+    console.log(existingUser);
+    const accessToken = generateAccessToken(existingUser);
+
+    return res.status(201).json({
+      userName: existingUser.userName,
+      email: existingUser.email,
+      accessToken: accessToken,
+      refreshToken: existingUser.token,
+      message: "Account created sucessfully",
+    });
   }
 });
 
 function generateAccessToken(user) {
-  return jwt.sign(user.toJSON(), process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15s" });
+  return jwt.sign(user.toJSON(), process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: "15s",
+  });
 }
 module.exports = router;
